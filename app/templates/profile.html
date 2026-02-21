@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - Wiz ForexBot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1e;
+            min-height: 100vh;
+            color: white;
+            padding: 20px;
+            padding-bottom: 100px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            gap: 15px;
+        }
+        .back {
+            color: #a0a0a0;
+            text-decoration: none;
+            font-size: 1.5rem;
+        }
+        h1 { font-size: 1.3rem; }
+        
+        .profile-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .avatar {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin: 0 auto 15px;
+            font-weight: 700;
+        }
+        .username { font-size: 1.3rem; font-weight: 600; }
+        .email { color: #a0a0a0; margin-bottom: 5px; }
+        .member { font-size: 0.85rem; color: #606060; }
+        
+        .credits-card {
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .credits-icon { font-size: 2.5rem; }
+        .credits-info { flex: 1; }
+        .credits-label { font-size: 0.9rem; opacity: 0.9; }
+        .credits-amount { font-size: 2rem; font-weight: 700; }
+        
+        .action-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .action-item {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .action-item:hover { background: rgba(255,255,255,0.1); }
+        .action-icon { font-size: 1.5rem; }
+        .action-info { flex: 1; }
+        .action-title { font-weight: 600; margin-bottom: 3px; }
+        .action-sub { font-size: 0.85rem; color: #00d084; }
+        .action-sub.coming { color: #a0a0a0; }
+        .badge {
+            background: rgba(255,255,255,0.2);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+        }
+        
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(22, 22, 46, 0.98);
+            display: flex;
+            justify-content: space-around;
+            padding: 15px 0;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .nav-item {
+            color: #a0a0a0;
+            text-decoration: none;
+            text-align: center;
+            font-size: 0.75rem;
+        }
+        .nav-item span { display: block; font-size: 1.3rem; margin-bottom: 3px; }
+        .nav-item.active { color: #e94560; }
+        
+        .logout {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .logout a {
+            color: #ff4757;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="{{ url_for('main.dashboard') }}" class="back">←</a>
+        <h1>Profile</h1>
+    </div>
+    
+    <div class="profile-card">
+        <div class="avatar">{{ current_user.username[0]|upper }}</div>
+        <div class="username">{{ current_user.username }}</div>
+        <div class="email">{{ current_user.email }}</div>
+        <div class="member">Member since {{ current_user.created_at.strftime('%B %Y') }}</div>
+    </div>
+    
+    <div class="credits-card">
+        <div class="credits-icon">💎</div>
+        <div class="credits-info">
+            <div class="credits-label">Available Credits</div>
+            <div class="credits-amount">{{ current_user.credits }}</div>
+        </div>
+    </div>
+    
+    <div class="action-list">
+        <div class="action-item" onclick="watchAd()">
+            <div class="action-icon">📺</div>
+            <div class="action-info">
+                <div class="action-title">Watch Ad</div>
+                <div class="action-sub">+200 credits per ad</div>
+            </div>
+        </div>
+        
+        <div class="action-item" style="opacity: 0.6;">
+            <div class="action-icon">💳</div>
+            <div class="action-info">
+                <div class="action-title">Buy Credits</div>
+                <div class="action-sub coming">Coming Soon</div>
+            </div>
+            <span class="badge">Soon</span>
+        </div>
+        
+        <div class="action-item" style="opacity: 0.6;">
+            <div class="action-icon">👑</div>
+            <div class="action-info">
+                <div class="action-title">Premium</div>
+                <div class="action-sub coming">Unlimited analysis</div>
+            </div>
+            <span class="badge">Soon</span>
+        </div>
+    </div>
+    
+    <div class="logout">
+        <a href="{{ url_for('auth.logout') }}">Logout</a>
+    </div>
+    
+    <div class="bottom-nav">
+        <a href="{{ url_for('main.dashboard') }}" class="nav-item">
+            <span>📊</span>
+            Home
+        </a>
+        <a href="{{ url_for('main.forex_bot') }}" class="nav-item">
+            <span>🤖</span>
+            Bot
+        </a>
+        <a href="{{ url_for('main.profile') }}" class="nav-item active">
+            <span>👤</span>
+            Profile
+        </a>
+    </div>
+    
+    <script>
+        function watchAd() {
+            if (!confirm('Watch a 30-second ad to earn 200 credits?')) return;
+            
+            fetch('/watch-ad', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('✅ You earned 200 credits! New balance: ' + data.new_balance);
+                        location.reload();
+                    } else {
+                        alert('⏳ ' + (data.error || 'Please wait before watching another ad'));
+                    }
+                });
+        }
+    </script>
+</body>
+</html>

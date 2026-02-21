@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forex Bot - Wiz ForexBot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1e;
+            min-height: 100vh;
+            color: white;
+            padding: 20px;
+            padding-bottom: 100px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            gap: 15px;
+        }
+        .back {
+            color: #a0a0a0;
+            text-decoration: none;
+            font-size: 1.5rem;
+        }
+        h1 { font-size: 1.3rem; }
+        
+        .step {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .step h3 {
+            color: #e94560;
+            margin-bottom: 15px;
+            font-size: 1rem;
+        }
+        
+        .pair-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        .pair-option {
+            background: rgba(255,255,255,0.05);
+            border: 2px solid transparent;
+            border-radius: 10px;
+            padding: 15px 5px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .pair-option:hover { background: rgba(255,255,255,0.1); }
+        .pair-option.selected {
+            border-color: #e94560;
+            background: rgba(233, 69, 96, 0.2);
+        }
+        
+        /* Image Upload Styles */
+        .upload-zone {
+            border: 2px dashed rgba(255,255,255,0.3);
+            border-radius: 15px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+        .upload-zone:hover {
+            border-color: #e94560;
+            background: rgba(233, 69, 96, 0.05);
+        }
+        .upload-zone.has-image {
+            border-style: solid;
+            border-color: #00d084;
+            background: rgba(0, 208, 132, 0.05);
+        }
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            display: block;
+        }
+        .upload-text {
+            color: #a0a0a0;
+            margin-bottom: 10px;
+        }
+        .upload-hint {
+            font-size: 0.8rem;
+            color: #606060;
+        }
+        #fileInput { display: none; }
+        
+        .image-preview {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        .image-preview.show { display: block; }
+        
+        .change-image {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        
+        .analyze-btn {
+            width: 100%;
+            padding: 18px;
+            background: linear-gradient(45deg, #e94560, #ff6b6b);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: none;
+            margin-top: 20px;
+        }
+        .analyze-btn.show { display: block; }
+        .analyze-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 15, 30, 0.98);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .loading.show { display: flex; }
+        .wizard-animation {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: bounce 1s infinite;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+        .loading-text {
+            color: #a0a0a0;
+            margin-top: 15px;
+        }
+        .progress-bar {
+            width: 200px;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            width: 0%;
+            animation: progress 2s ease-in-out infinite;
+        }
+        @keyframes progress {
+            0% { width: 0%; }
+            50% { width: 70%; }
+            100% { width: 100%; }
+        }
+        
+        .result {
+            display: none;
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 25px;
+            margin-top: 20px;
+        }
+        .result.show { display: block; }
+        .signal-badge {
+            text-align: center;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        .signal-badge.buy { background: rgba(0, 208, 132, 0.2); color: #00d084; }
+        .signal-badge.sell { background: rgba(255, 71, 87, 0.2); color: #ff4757; }
+        .signal-badge.neutral { background: rgba(255,255,255,0.1); color: #a0a0a0; }
+        
+        .uploaded-image {
+            width: 100%;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            max-height: 200px;
+            object-fit: cover;
+        }
+        
+        .levels {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .level {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .level-label { font-size: 0.8rem; color: #a0a0a0; margin-bottom: 5px; }
+        .level-value { font-size: 1.2rem; font-weight: 700; }
+        .level.tp { border: 1px solid #00d084; }
+        .level.sl { border: 1px solid #ff4757; }
+        
+        .reasoning {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+        .reasoning h4 { margin-bottom: 10px; color: #a0a0a0; font-size: 0.9rem; }
+        .reasoning ul { list-style: none; padding-left: 0; }
+        .reasoning li { padding: 5px 0; padding-left: 20px; position: relative; }
+        .reasoning li:before { content: "✓"; position: absolute; left: 0; color: #00d084; }
+        
+        .confidence {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .confidence-bar {
+            height: 10px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            transition: width 0.5s;
+        }
+        
+        .new-analysis {
+            width: 100%;
+            padding: 16px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 12px;
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="{{ url_for('main.dashboard') }}" class="back">←</a>
+        <h1>Forex Analysis Bot</h1>
+    </div>
+    
+    <!-- Step 1: Select Pair -->
+    <div class="step" id="step1">
+        <h3>Step 1: Select Currency Pair</h3>
+        <div class="pair-grid">
+            {% for pair in pairs %}
+            <div class="pair-option" onclick="selectPair('{{ pair }}')">{{ pair }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <!-- Step 2: Upload Chart -->
+    <div class="step" id="step2" style="display: none;">
+        <h3>Step 2: Upload Chart Image</h3>
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+            <input type="file" id="fileInput" accept="image/*" onchange="handleFile(event)">
+            <img id="preview" class="image-preview">
+            <div id="uploadPrompt">
+                <span class="upload-icon">📤</span>
+                <div class="upload-text">Tap to upload chart image</div>
+                <div class="upload-hint">Supports: JPG, PNG, GIF (Max 16MB)</div>
+            </div>
+            <button class="change-image" id="changeBtn" style="display: none;" onclick="event.stopPropagation(); resetUpload()">Change Image</button>
+        </div>
+    </div>
+    
+    <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">
+        🔮 Analyze Chart (50 credits)
+    </button>
+    
+    <!-- Loading -->
+    <div class="loading" id="loading">
+        <div class="wizard-animation">🧙‍♂️</div>
+        <h3>Analyzing Your Chart...</h3>
+        <div class="progress-bar">
+            <div class="progress-fill"></div>
+        </div>
+        <p class="loading-text">Scanning price action • Detecting patterns • Calculating levels</p>
+    </div>
+    
+    <!-- Result -->
+    <div class="result" id="result"></div>
+
+    <script>
+        let selectedPair = null;
+        let selectedFile = null;
+        
+        function selectPair(pair) {
+            selectedPair = pair;
+            document.querySelectorAll('.pair-option').forEach(el => el.classList.remove('selected'));
+            event.target.classList.add('selected');
+            
+            // Show step 2
+            document.getElementById('step2').style.display = 'block';
+            document.getElementById('step2').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function handleFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file');
+                return;
+            }
+            
+            if (file.size > 16 * 1024 * 1024) {
+                alert('File too large. Max 16MB');
+                return;
+            }
+            
+            selectedFile = file;
+            
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const preview = document.getElementById('preview');
+                preview.src = e.target.result;
+                preview.classList.add('show');
+                
+                document.getElementById('uploadPrompt').style.display = 'none';
+                document.getElementById('changeBtn').style.display = 'inline-block';
+                document.getElementById('uploadZone').classList.add('has-image');
+                
+                // Show analyze button
+                document.getElementById('analyzeBtn').classList.add('show');
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        function resetUpload() {
+            selectedFile = null;
+            document.getElementById('fileInput').value = '';
+            document.getElementById('preview').classList.remove('show');
+            document.getElementById('uploadPrompt').style.display = 'block';
+            document.getElementById('changeBtn').style.display = 'none';
+            document.getElementById('uploadZone').classList.remove('has-image');
+            document.getElementById('analyzeBtn').classList.remove('show');
+        }
+        
+        function analyze() {
+            if (!selectedPair || !selectedFile) {
+                alert('Please select a pair and upload an image');
+                return;
+            }
+            
+            document.getElementById('loading').classList.add('show');
+            
+            const formData = new FormData();
+            formData.append('pair', selectedPair);
+            formData.append('chart_image', selectedFile);
+            
+            fetch('/analyze', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('loading').classList.remove('show');
+                
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                
+                showResult(data);
+            })
+            .catch(err => {
+                document.getElementById('loading').classList.remove('show');
+                alert('Analysis failed. Please try again.');
+                console.error(err);
+            });
+        }
+        
+        function showResult(data) {
+            const resultDiv = document.getElementById('result');
+            
+            let imageHtml = '';
+            if (data.image_url) {
+                imageHtml = `<img src="${data.image_url}" class="uploaded-image" alt="Uploaded chart">`;
+            }
+            
+            if (data.signal === 'NEUTRAL') {
+                resultDiv.innerHTML = `
+                    ${imageHtml}
+                    <div class="signal-badge neutral">NEUTRAL</div>
+                    <p style="text-align: center; color: #a0a0a0; margin-bottom: 15px;">
+                        ${data.reason || 'No clear trading opportunity detected'}
+                    </p>
+                    <div class="reasoning">
+                        <h4>Analysis</h4>
+                        <ul>
+                            ${data.reasoning.map(r => `<li>${r}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <button class="new-analysis" onclick="resetAll()">New Analysis</button>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    ${imageHtml}
+                    <div class="signal-badge ${data.signal.toLowerCase()}">
+                        ${data.signal}
+                    </div>
+                    
+                    <div class="confidence">
+                        <div>Confidence: ${data.confidence}%</div>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: ${data.confidence}%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="levels">
+                        <div class="level">
+                            <div class="level-label">Entry Price</div>
+                            <div class="level-value">${data.entry_price}</div>
+                        </div>
+                        <div class="level tp">
+                            <div class="level-label">Take Profit</div>
+                            <div class="level-value" style="color: #00d084">${data.take_profit}</div>
+                        </div>
+                        <div class="level sl">
+                            <div class="level-label">Stop Loss</div>
+                            <div class="level-value" style="color: #ff4757">${data.stop_loss}</div>
+                        </div>
+                        <div class="level">
+                            <div class="level-label">Risk:Reward</div>
+                            <div class="level-value">1:${data.risk_reward}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="reasoning">
+                        <h4>Why This Signal?</h4>
+                        <ul>
+                            ${data.reasoning.map(r => `<li>${r}</li>`).join('')}
+                        </ul>
+                    </div>
+                    
+                    <p style="text-align: center; color: #a0a0a0; font-size: 0.85rem; margin-bottom: 15px;">
+                        💎 Credits remaining: ${data.remaining_credits || 0}
+                    </p>
+                    
+                    <button class="new-analysis" onclick="resetAll()">New Analysis</button>
+                `;
+            }
+            
+            resultDiv.classList.add('show');
+            resultDiv.scrollIntoView({ behavior: 'smooth' });
+            
+            // Hide form
+            document.getElementById('step1').style.display = 'none';
+            document.getElementById('step2').style.display = 'none';
+            document.getElementById('analyzeBtn').style.display = 'none';
+        }
+        
+        function resetAll() {
+            selectedPair = null;
+            selectedFile = null;
+            
+            document.querySelectorAll('.pair-option').forEach(el => el.classList.remove('selected'));
+            resetUpload();
+            
+            document.getElementById('result').classList.remove('show');
+            document.getElementById('result').innerHTML = '';
+            document.getElementById('step1').style.display = 'block';
+            document.getElementById('step2').style.display = 'none';
+            document.getElementById('analyzeBtn').classList.remove('show');
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>

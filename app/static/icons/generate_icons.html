@@ -1,0 +1,33 @@
+<!-- Open this in browser to generate icons -->
+<canvas id="canvas" width="512" height="512"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// Background
+const gradient = ctx.createLinearGradient(0, 0, 512, 512);
+gradient.addColorStop(0, '#e94560');
+gradient.addColorStop(1, '#ff6b6b');
+ctx.fillStyle = gradient;
+ctx.fillRect(0, 0, 512, 512);
+
+// Rounded corners
+ctx.globalCompositeOperation = 'destination-in';
+ctx.beginPath();
+ctx.roundRect(0, 0, 512, 512, 100);
+ctx.fill();
+
+// Text
+ctx.globalCompositeOperation = 'source-over';
+ctx.fillStyle = 'white';
+ctx.font = 'bold 300px Arial';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+ctx.fillText('🧙', 256, 256);
+
+// Download link
+const link = document.createElement('a');
+link.download = 'icon-512x512.png';
+link.href = canvas.toDataURL();
+link.click();
+</script>
