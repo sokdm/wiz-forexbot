@@ -45,28 +45,23 @@ def analyze():
     
     # Handle image upload
     image_url = None
-    image_path = None
     
     if 'chart_image' in request.files:
         file = request.files['chart_image']
         if file and file.filename and allowed_file(file.filename):
-            # Secure filename
             filename = secure_filename(f"{current_user.id}_{datetime.now().timestamp()}_{file.filename}")
             filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-            
-            # Save file
             file.save(filepath)
-            image_path = filename
             image_url = f"/static/uploads/{filename}"
     
-    # Perform analysis (with or without image)
+    # Perform analysis
     result = analyzer.analyze(pair)
     
-    # Add image URL to result
     if image_url:
         result['image_url'] = image_url
     
-    if result['signal'] in ['BUY', 'SELL']:
+    # Only charge for valid signals
+    if result['signal'] in ['BUY', 'SELL'] and result['confidence'] >= 70:
         current_user.credits -= Config.ANALYSIS_COST
         
         analysis = Analysis(
@@ -76,7 +71,7 @@ def analyze():
             entry_price=result['entry_price'],
             take_profit=result['take_profit'],
             stop_loss=result['stop_loss'],
-            confidence=result['confidence'],
+            confidence=int(result['confidence']),
             reasoning=' | '.join(result['reasoning'])
         )
         db.session.add(analysis)
@@ -94,15 +89,6 @@ def analyze():
         result['remaining_credits'] = current_user.credits
     
     return jsonify(result)
-
-@bp.route('/analysis/<int:analysis_id>')
-@login_required
-def analysis_result(analysis_id):
-    analysis = Analysis.query.get_or_404(analysis_id)
-    if analysis.user_id != current_user.id and not current_user.is_admin:
-        flash('Unauthorized', 'error')
-        return redirect(url_for('main.dashboard'))
-    return render_template('analysis_result.html', analysis=analysis)
 
 @bp.route('/profile')
 @login_required
