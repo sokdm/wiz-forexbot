@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Analyses - Admin{% endblock %}
+
+{% block content %}
+<style>
+    .admin-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .filter-box { margin-bottom: 20px; }
+    .filter-box select {
+        padding: 12px 20px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: white;
+        font-size: 1rem;
+    }
+    .analyses-grid {
+        display: grid;
+        gap: 15px;
+    }
+    .analysis-card {
+        background: var(--bg-card);
+        border-radius: 16px;
+        padding: 20px;
+        border: 1px solid var(--border);
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto;
+        align-items: center;
+        gap: 15px;
+    }
+    .signal-badge {
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-weight: 600;
+        text-align: center;
+    }
+    .signal-buy { background: rgba(0, 208, 132, 0.2); color: var(--success); }
+    .signal-sell { background: rgba(255, 71, 87, 0.2); color: var(--danger); }
+    .signal-neutral { background: rgba(255, 165, 2, 0.2); color: var(--warning); }
+</style>
+
+<div class="admin-container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+        <h1>📊 All Analyses</h1>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">← Back</a>
+    </div>
+    
+    <form class="filter-box" method="get">
+        <select name="pair" onchange="this.form.submit()">
+            <option value="">All Pairs</option>
+            {% for p in pairs %}
+            <option value="{{ p[0] }}" {% if p[0] == selected_pair %}selected{% endif %}>{{ p[0] }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    
+    <div class="analyses-grid">
+        {% for analysis in analyses.items %}
+        <div class="analysis-card">
+            <div>
+                <div style="font-weight: 600;">{{ analysis.pair }}</div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">#{{ analysis.id }}</div>
+            </div>
+            <div>
+                <div style="font-weight: 600;">{{ analysis.user.username }}</div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">{{ analysis.user.email }}</div>
+            </div>
+            <div class="signal-badge signal-{{ analysis.signal|lower }}">
+                {{ analysis.signal }}
+            </div>
+            <div style="text-align: center;">
+                <div style="font-weight: 600;">{{ analysis.confidence }}%</div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">Confidence</div>
+            </div>
+            <div style="text-align: right; color: var(--text-secondary); font-size: 0.9rem;">
+                {{ analysis.created_at.strftime('%Y-%m-%d %H:%M') }}
+            </div>
+            <div>
+                <a href="#" class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.85rem;">View</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="pagination" style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+        {% if analyses.has_prev %}
+        <a href="{{ url_for('admin.analyses', page=analyses.prev_num, pair=selected_pair) }}" class="btn btn-secondary">← Previous</a>
+        {% endif %}
+        {% if analyses.has_next %}
+        <a href="{{ url_for('admin.analyses', page=analyses.next_num, pair=selected_pair) }}" class="btn btn-secondary">Next →</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

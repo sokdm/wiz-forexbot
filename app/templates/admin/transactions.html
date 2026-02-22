@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions - Admin{% endblock %}
+
+{% block content %}
+<style>
+    .admin-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .tx-table {
+        background: var(--bg-card);
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+    }
+    .tx-header, .tx-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 2fr 1fr;
+        padding: 15px 20px;
+        align-items: center;
+    }
+    .tx-header {
+        background: var(--bg-dark);
+        font-weight: 600;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+    .tx-row { border-top: 1px solid var(--border); }
+    .tx-type {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .type-credit { background: rgba(0, 208, 132, 0.2); color: var(--success); }
+    .type-debit { background: rgba(255, 71, 87, 0.2); color: var(--danger); }
+    .type-ad { background: rgba(116, 185, 255, 0.2); color: var(--info); }
+</style>
+
+<div class="admin-container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+        <h1>💳 Transactions</h1>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary">← Back</a>
+    </div>
+    
+    <div class="tx-table">
+        <div class="tx-header">
+            <div>User</div>
+            <div>Type</div>
+            <div>Amount</div>
+            <div>Description</div>
+            <div>Date</div>
+        </div>
+        
+        {% for tx in transactions.items %}
+        <div class="tx-row">
+            <div style="font-weight: 500;">{{ tx.user.username }}</div>
+            <div>
+                <span class="tx-type type-{{ tx.type|lower }}">{{ tx.type }}</span>
+            </div>
+            <div style="font-weight: 600; color: {% if tx.type in ['CREDIT', 'AD_REWARD', 'ADMIN_CREDIT'] %}var(--success){% else %}var(--danger){% endif %};">
+                {% if tx.type in ['CREDIT', 'AD_REWARD', 'ADMIN_CREDIT'] %}+{% else %}-{% endif %}{{ tx.amount }}
+            </div>
+            <div style="color: var(--text-secondary); font-size: 0.9rem;">{{ tx.description or '-' }}</div>
+            <div style="color: var(--text-secondary); font-size: 0.85rem;">{{ tx.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="pagination" style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+        {% if transactions.has_prev %}
+        <a href="{{ url_for('admin.transactions', page=transactions.prev_num) }}" class="btn btn-secondary">← Previous</a>
+        {% endif %}
+        {% if transactions.has_next %}
+        <a href="{{ url_for('admin.transactions', page=transactions.next_num) }}" class="btn btn-secondary">Next →</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

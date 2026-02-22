@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}{{ user.username }} - Admin{% endblock %}
+
+{% block content %}
+<style>
+    .admin-container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+    .user-card {
+        background: var(--bg-card);
+        border-radius: 20px;
+        padding: 30px;
+        margin-bottom: 20px;
+        border: 1px solid var(--border);
+    }
+    .user-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+    .user-avatar {
+        width: 80px;
+        height: 80px;
+        background: var(--gradient-1);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        font-weight: 700;
+    }
+    .stats-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+        margin: 30px 0;
+    }
+    .stat-box {
+        background: var(--bg-dark);
+        padding: 20px;
+        border-radius: 12px;
+        text-align: center;
+    }
+    .action-buttons {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .history-section {
+        background: var(--bg-card);
+        border-radius: 20px;
+        padding: 25px;
+        margin-top: 20px;
+        border: 1px solid var(--border);
+    }
+    .history-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 15px;
+        border-bottom: 1px solid var(--border);
+    }
+    .history-item:last-child { border-bottom: none; }
+</style>
+
+<div class="admin-container">
+    <a href="{{ url_for('admin.users') }}" class="btn btn-secondary" style="margin-bottom: 20px;">← Back to Users</a>
+    
+    <div class="user-card">
+        <div class="user-header">
+            <div style="display: flex; align-items: center; gap: 20px;">
+                <div class="user-avatar">{{ user.username[0]|upper }}</div>
+                <div>
+                    <h1>{{ user.username }}</h1>
+                    <p style="color: var(--text-secondary);">{{ user.email }}</p>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary);">
+                        Joined: {{ user.created_at.strftime('%Y-%m-%d %H:%M') }}
+                    </p>
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 2rem; font-weight: 800; color: var(--primary);">{{ user.credits }}</div>
+                <div style="color: var(--text-secondary);">Credits</div>
+            </div>
+        </div>
+        
+        <div class="stats-row">
+            <div class="stat-box">
+                <div style="font-size: 1.5rem; font-weight: 700;">{{ user.analyses|length }}</div>
+                <div style="color: var(--text-secondary); font-size: 0.9rem;">Analyses</div>
+            </div>
+            <div class="stat-box">
+                <div style="font-size: 1.5rem; font-weight: 700;">{{ transactions|length }}</div>
+                <div style="color: var(--text-secondary); font-size: 0.9rem;">Transactions</div>
+            </div>
+            <div class="stat-box">
+                <div style="font-size: 1.5rem; font-weight: 700;">
+                    {% if user.is_admin %}👑{% elif user.is_active %}✅{% else %}🚫{% endif %}
+                </div>
+                <div style="color: var(--text-secondary); font-size: 0.9rem;">
+                    {% if user.is_admin %}Admin{% elif user.is_active %}Active{% else %}Banned{% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="action-buttons">
+            <form method="post" action="{{ url_for('admin.add_credits', user_id=user.id) }}" style="display: flex; gap: 10px; flex: 1;">
+                <input type="number" name="amount" placeholder="Credits amount" style="flex: 1; padding: 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 10px; color: white;">
+                <button type="submit" class="btn btn-primary">Add Credits</button>
+            </form>
+            
+            <form method="post" action="{{ url_for('admin.toggle_admin', user_id=user.id) }}" onsubmit="return confirm('Toggle admin status?')">
+                <button type="submit" class="btn btn-secondary">
+                    {% if user.is_admin %}Remove Admin{% else %}Make Admin{% endif %}
+                </button>
+            </form>
+            
+            {% if user.is_active %}
+            <form method="post" action="{{ url_for('admin.ban_user', user_id=user.id) }}" onsubmit="return confirm('Ban this user?')">
+                <button type="submit" class="btn" style="background: var(--danger); color: white;">Ban User</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="history-section">
+        <h3>📊 Recent Analyses</h3>
+        {% for analysis in analyses %}
+        <div class="history-item">
+            <div>
+                <strong>{{ analysis.pair }}</strong>
+                <span style="color: var(--text-secondary); margin-left: 10px;">{{ analysis.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            <span class="badge {% if analysis.signal == 'BUY' %}badge-success{% elif analysis.signal == 'SELL' %}badge-danger{% else %}badge-warning{% endif %}">
+                {{ analysis.signal }}
+            </span>
+        </div>
+        {% else %}
+        <p style="color: var(--text-secondary); padding: 20px;">No analyses yet</p>
+        {% endfor %}
+    </div>
+    
+    <div class="history-section">
+        <h3>💳 Transaction History</h3>
+        {% for tx in transactions %}
+        <div class="history-item">
+            <div>
+                <strong>{{ tx.type }}</strong>
+                <span style="color: var(--text-secondary); margin-left: 10px;">{{ tx.description or 'No description' }}</span>
+            </div>
+            <div style="text-align: right;">
+                <div style="color: {% if tx.type in ['CREDIT', 'AD_REWARD', 'ADMIN_CREDIT'] %}var(--success){% else %}var(--danger){% endif %}; font-weight: 600;">
+                    {% if tx.type in ['CREDIT', 'AD_REWARD', 'ADMIN_CREDIT'] %}+{% else %}-{% endif %}{{ tx.amount }}
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary);">{{ tx.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+            </div>
+        </div>
+        {% else %}
+        <p style="color: var(--text-secondary); padding: 20px;">No transactions yet</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
