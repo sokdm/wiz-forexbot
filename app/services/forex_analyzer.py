@@ -1,466 +1,292 @@
-import requests
-import numpy as np
-from datetime import datetime, timedelta
+import requests, numpy as np
+from datetime import datetime
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+from enum import Enum
 import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class SmartForexAnalyzer:
-    """Institutional-Grade Confluence Analyzer v3.0
-    - Strict signal requirements (no conflicting signals)
-    - Real-time price validation
-    - Minimum confluence threshold"""
+class Signal(Enum):
+    STRONG_BUY="STRONG_BUY"; BUY="BUY"; WEAK_BUY="WEAK_BUY"
+    SELL="SELL"; STRONG_SELL="STRONG_SELL"; WEAK_SELL="WEAK_SELL"; NO_TRADE="NO_TRADE"
+
+@dataclass
+class TFData:
+    tf: str; signal: Signal; conf: float; rsi: float; adx: float; trend: str; price: float; age: int; max_age: int; weight: float
+
+class ProAnalyzer:
+    PAIRS={"EURUSD":"EURUSD=X","GBPUSD":"GBPUSD=X","USDJPY":"USDJPY=X","AUDUSD":"AUDUSD=X","USDCAD":"USDCAD=X","USDCHF":"USDCHF=X","NZDUSD":"NZDUSD=X","EURGBP":"EURGBP=X","EURJPY":"EURJPY=X","GBPJPY":"GBPJPY=X","AUDJPY":"AUDJPY=X","XAUUSD":"GC=F","XAGUSD":"SI=F","BTCUSD":"BTC-USD","ETHUSD":"ETH-USD","USOIL":"CL=F","UKOIL":"BZ=F"}
+    TFS={"15m":{"i":"15m","r":"10d","w":1.5,"max_age":20},"1h":{"i":"1h","r":"30d","w":2.5,"max_age":90},"4h":{"i":"4h","r":"90d","w":3,"max_age":300}}
     
-    PAIRS = {
-        'EURUSD': 'EURUSD=X', 'GBPUSD': 'GBPUSD=X', 'USDJPY': 'USDJPY=X',
-        'AUDUSD': 'AUDUSD=X', 'USDCAD': 'USDCAD=X', 'USDCHF': 'USDCHF=X',
-        'NZDUSD': 'NZDUSD=X', 'EURGBP': 'EURGBP=X', 'EURJPY': 'EURJPY=X',
-        'GBPJPY': 'GBPJPY=X', 'AUDJPY': 'AUDJPY=X', 'XAUUSD': 'GC=F',
-        'XAGUSD': 'SI=F', 'BTCUSD': 'BTC-USD', 'ETHUSD': 'ETH-USD',
-        'USOIL': 'CL=F', 'UKOIL': 'BZ=F'
-    }
+    def __init__(self):
+        self.sess=requests.Session()
+        self.sess.headers.update({"User-Agent":"Mozilla/5.0"})
     
-    def get_market_data(self, pair, range_days=5):
-        """Fetch with real-time validation"""
+    def get_live_price(self,pair):
+        """Get real-time price from alternative source"""
         try:
-            symbol = self.PAIRS.get(pair, f'{pair}=X')
+            # Try CoinGecko for crypto (real-time)
+            if "BTC" in pair or "ETH" in pair:
+                cg_map={"BTCUSD":"bitcoin","ETHUSD":"ethereum"}
+                if pair in cg_map:
+                    r=requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={cg_map[pair]}&vs_currencies=usd",timeout=5)
+                    if r.status_code==200:
+                        return r.json()[cg_map[pair]]["usd"]
+        except: pass
+        return None
+    
+    def fetch(self,pair,tf):
+        try:
+            sym=self.PAIRS.get(pair,f"{pair}=X")
+            cfg=self.TFS[tf]
+            url=f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval={cfg['i']}&range={cfg['r']}"
+            r=self.sess.get(url,timeout=10)
+            if r.status_code!=200: return None
+            data=r.json()
+            if not data.get("chart",{}).get("result"): return None
             
-            # Get chart data
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1h&range={range_days}d"
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(url, headers=headers, timeout=10)
-            data = response.json()
+            res=data["chart"]["result"][0]
+            qt=res["indicators"]["quote"][0]
+            meta=res["meta"]
+            ts=res["timestamp"]
             
-            result = data['chart']['result'][0]
-            quote = result['indicators']['quote'][0]
-            meta = result['meta']
+            # Get price from multiple sources
+            yahoo_live=meta.get("regularMarketPrice") or meta.get("postMarketPrice")
+            alt_live=self.get_live_price(pair)
             
-            closes = [c for c in quote['close'] if c]
-            highs = [h for h in quote['high'] if h]
-            lows = [l for l in quote['low'] if l]
-            opens = [o for o in quote['open'] if o]
-            volumes = [v for v in quote['volume'] if v] if quote['volume'] else []
-            timestamps = result['timestamp']
+            clean=[{"t":ts[i],"o":qt["open"][i],"h":qt["high"][i],"l":qt["low"][i],"c":qt["close"][i],"v":qt["volume"][i] or 0} 
+                   for i in range(len(ts)) if all(qt[k][i] is not None for k in ["close","high","low","open"])]
             
-            if len(closes) < 30:
+            if len(clean)<20: return None
+            
+            c=[d["c"] for d in clean]
+            h=[d["h"] for d in clean]
+            l=[d["l"] for d in clean]
+            v=[d["v"] for d in clean]
+            
+            last_c=c[-1]
+            # PRIORITY: Alternative live > Yahoo live > Last close
+            curr=alt_live if alt_live else (yahoo_live if yahoo_live else last_c)
+            
+            last_t=datetime.fromtimestamp(clean[-1]["t"])
+            age=int((datetime.now()-last_t).total_seconds()/60)
+            
+            # STRICT: Reject if too stale
+            if age>cfg["max_age"]*3:
+                logger.warning(f"{pair} {tf} TOO STALE: {age}min")
                 return None
             
-            # Get real-time price
-            live_price = meta.get('regularMarketPrice')
-            last_close = closes[-1]
+            is_live=curr!=last_c or age<5
             
-            # Check data freshness (last candle should be recent)
-            last_candle_time = datetime.fromtimestamp(timestamps[-1])
-            time_since_candle = datetime.now() - last_candle_time
-            
-            # If data is stale (>2 hours old), warn but still use it
-            is_stale = time_since_candle > timedelta(hours=2)
-            
-            # Use live price if available and significantly different
-            if live_price and abs(live_price - last_close) / last_close > 0.001:
-                current_price = live_price
-                price_gap = abs(live_price - last_close)
-            else:
-                current_price = last_close
-                price_gap = 0
-            
-            return {
-                'closes': closes,
-                'highs': highs,
-                'lows': lows,
-                'opens': opens,
-                'volumes': volumes,
-                'current': current_price,
-                'previous': closes[-2],
-                'day_high': max(highs[-24:]) if len(highs) >= 24 else max(highs),
-                'day_low': min(lows[-24:]) if len(lows) >= 24 else min(lows),
-                'timestamp': timestamps[-1],
-                'is_stale': is_stale,
-                'price_gap': price_gap,
-                'last_candle_age_minutes': int(time_since_candle.total_seconds() / 60)
-            }
+            return{"c":c,"h":h,"l":l,"v":v,"price":curr,"last_c":last_c,"age":age,"max_age":cfg["max_age"],"is_live":is_live,"source":"alt" if alt_live else "yahoo"}
         except Exception as e:
-            logger.error(f"Error: {e}")
+            logger.error(f"Error {pair} {tf}: {e}")
             return None
     
-    def calculate_ema(self, data, period):
-        multiplier = 2 / (period + 1)
-        ema = [data[0]]
-        for price in data[1:]:
-            ema.append((price - ema[-1]) * multiplier + ema[-1])
-        return ema
+    def ema(self,d,p):
+        if len(d)<p: return [d[-1]]*len(d)
+        m=2/(p+1); e=[sum(d[:p])/p]
+        for x in d[p:]: e.append((x-e[-1])*m+e[-1])
+        return [e[0]]*(p-1)+e
     
-    def calculate_rsi(self, closes, period=14):
-        if len(closes) < period + 1:
-            return 50
-        deltas = np.diff(closes)
-        gains = np.where(deltas > 0, deltas, 0)
-        losses = np.where(deltas < 0, -deltas, 0)
-        avg_gains = np.convolve(gains, np.ones(period)/period, mode='valid')
-        avg_losses = np.convolve(losses, np.ones(period)/period, mode='valid')
-        if len(avg_losses) == 0 or avg_losses[-1] == 0:
-            return 100
-        rs = avg_gains[-1] / avg_losses[-1]
-        return 100 - (100 / (1 + rs))
+    def rsi(self,c,p=14):
+        if len(c)<p+1: return 50
+        d=np.diff(c); g=np.where(d>0,d,0); l=np.where(d<0,-d,0)
+        ag,al=np.mean(g[:p]),np.mean(l[:p])
+        for i in range(p,len(g)): ag=(ag*(p-1)+g[i])/p; al=(al*(p-1)+l[i])/p
+        return 100-(100/(1+ag/al)) if al>0 else 100
     
-    def calculate_macd(self, closes):
-        ema12 = self.calculate_ema(closes, 12)
-        ema26 = self.calculate_ema(closes, 26)
-        macd_line = [e12 - e26 for e12, e26 in zip(ema12[-len(ema26):], ema26)]
-        signal_line = self.calculate_ema(macd_line, 9)
-        hist = macd_line[-1] - signal_line[-1]
-        return macd_line[-1], signal_line[-1], hist
+    def macd(self,c):
+        e12,e26=self.ema(c,12),self.ema(c,26)
+        ml=[a-b for a,b in zip(e12[-len(e26):],e26)]
+        sl=self.ema(ml,9)
+        h=ml[-1]-sl[-1]; ph=(ml[-2]-sl[-2]) if len(ml)>1 else h
+        st="bullish_expanding" if h>0 and h>ph else "bullish_contracting" if h>0 else "bearish_expanding" if h<0 and h<ph else "bearish_contracting"
+        return h,st
     
-    def calculate_adx(self, highs, lows, closes, period=14):
-        if len(highs) < period + 1:
-            return 0, 0, 0
-        
-        tr_list = []
-        plus_dm = []
-        minus_dm = []
-        
-        for i in range(1, len(highs)):
-            tr1 = highs[i] - lows[i]
-            tr2 = abs(highs[i] - closes[i-1])
-            tr3 = abs(lows[i] - closes[i-1])
-            tr_list.append(max(tr1, tr2, tr3))
-            
-            up_move = highs[i] - highs[i-1]
-            down_move = lows[i-1] - lows[i]
-            plus_dm.append(up_move if up_move > down_move and up_move > 0 else 0)
-            minus_dm.append(down_move if down_move > up_move and down_move > 0 else 0)
-        
-        atr = np.mean(tr_list[-period:])
-        plus_di = 100 * np.mean(plus_dm[-period:]) / atr if atr > 0 else 0
-        minus_di = 100 * np.mean(minus_dm[-period:]) / atr if atr > 0 else 0
-        
-        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di) if (plus_di + minus_di) > 0 else 0
-        return dx, plus_di, minus_di
+    def adx(self,h,l,c,p=14):
+        if len(h)<p+1: return 0
+        tr,pdm,mdm=[],[],[]
+        for i in range(1,len(h)):
+            tr.append(max(h[i]-l[i],abs(h[i]-c[i-1]),abs(l[i]-c[i-1])))
+            um,dm=h[i]-h[i-1],l[i-1]-l[i]
+            pdm.append(um if um>dm and um>0 else 0)
+            mdm.append(dm if dm>um and dm>0 else 0)
+        atr=sum(tr[-p:])/p
+        pdi=100*sum(pdm[-p:])/p/atr if atr>0 else 0
+        mdi=100*sum(mdm[-p:])/p/atr if atr>0 else 0
+        return 100*abs(pdi-mdi)/(pdi+mdi) if (pdi+mdi)>0 else 0
     
-    def analyze_structure(self, highs, lows, closes):
-        if len(highs) < 10:
-            return 'undefined', 0
-        
-        recent_highs = highs[-10:]
-        recent_lows = lows[-10:]
-        
-        hh = sum(1 for i in range(9) if recent_highs[i] < recent_highs[i+1])
-        hl = sum(1 for i in range(9) if recent_lows[i] < recent_lows[i+1])
-        lh = sum(1 for i in range(9) if recent_highs[i] > recent_highs[i+1])
-        ll = sum(1 for i in range(9) if recent_lows[i] > recent_lows[i+1])
-        
-        if hh >= 6 and hl >= 6:
-            return 'bullish_structure', 3
-        elif hh >= 4 and hl >= 4:
-            return 'bullish_bias', 1
-        elif lh >= 6 and ll >= 6:
-            return 'bearish_structure', -3
-        elif lh >= 4 and ll >= 4:
-            return 'bearish_bias', -1
-        return 'choppy', 0
+    def atr(self,h,l,c,p=14):
+        if len(h)<p+1: return 0
+        return sum([max(h[i]-l[i],abs(h[i]-c[i-1]),abs(l[i]-c[i-1])) for i in range(1,len(h))][-p:])/p
     
-    def strict_confluence_analysis(self, data):
-        """Strict analysis - conflicting signals = NO TRADE"""
-        closes = data['closes']
-        highs = data['highs']
-        lows = data['lows']
-        volumes = data['volumes']
-        current = data['current']
-        
-        bullish_points = 0
-        bearish_points = 0
-        neutral_points = 0
-        
-        reasons = []
-        warnings = []
-        
-        # 1. TREND ANALYSIS (Max 30 points)
-        ema20 = self.calculate_ema(closes, 20)[-1]
-        ema50 = self.calculate_ema(closes, 50)[-1] if len(closes) >= 50 else ema20
-        sma200 = np.mean(closes[-200:]) if len(closes) >= 200 else np.mean(closes)
-        adx, plus_di, minus_di = self.calculate_adx(highs, lows, closes)
-        
-        # Trend must be clear
-        if current > ema20 > ema50 and current > sma200:
-            bullish_points += 25
-            if adx > 25:
-                bullish_points += 5
-                reasons.append(("✓✓ Strong bullish trend (ADX>25)", "strong"))
-            else:
-                reasons.append(("✓ Bullish trend", "normal"))
-        elif current < ema20 < ema50 and current < sma200:
-            bearish_points += 25
-            if adx > 25:
-                bearish_points += 5
-                reasons.append(("✓✓ Strong bearish trend (ADX>25)", "strong"))
-            else:
-                reasons.append(("✓ Bearish trend", "normal"))
-        else:
-            neutral_points += 20
-            reasons.append(("→ Mixed trend signals", "warning"))
-            if adx < 20:
-                warnings.append("Trend too weak (ADX<20)")
-        
-        # 2. MOMENTUM - RSI (Max 20 points)
-        rsi = self.calculate_rsi(closes)
-        
-        if rsi < 30:
-            bullish_points += 20
-            reasons.append((f"✓✓ RSI oversold ({rsi:.1f})", "strong"))
-        elif rsi < 40:
-            bullish_points += 10
-            reasons.append((f"✓ RSI low ({rsi:.1f})", "normal"))
-        elif rsi > 70:
-            bearish_points += 20
-            reasons.append((f"✓✓ RSI overbought ({rsi:.1f})", "strong"))
-        elif rsi > 60:
-            bearish_points += 10
-            reasons.append((f"✓ RSI high ({rsi:.1f})", "normal"))
-        else:
-            neutral_points += 10
-            reasons.append((f"→ RSI neutral ({rsi:.1f})", "normal"))
-        
-        # 3. MOMENTUM - MACD (Max 20 points) - CRITICAL
-        macd, macd_signal, macd_hist = self.calculate_macd(closes)
-        
-        if macd > macd_signal and macd_hist > 0:
-            bullish_points += 20
-            if macd_hist > macd_hist * 1.1:  # Expanding
-                bullish_points += 5
-                reasons.append(("✓✓ MACD bullish expanding", "strong"))
-            else:
-                reasons.append(("✓ MACD bullish", "normal"))
-        elif macd < macd_signal and macd_hist < 0:
-            bearish_points += 20
-            if macd_hist < macd_hist * 1.1:
-                bearish_points += 5
-                reasons.append(("✓✓ MACD bearish expanding", "strong"))
-            else:
-                reasons.append(("✓ MACD bearish", "normal"))
-        else:
-            neutral_points += 15
-            reasons.append(("→ MACD mixed/transitioning", "warning"))
-        
-        # 4. MARKET STRUCTURE (Max 20 points)
-        structure, _ = self.analyze_structure(highs, lows, closes)
-        
-        if structure == 'bullish_structure':
-            bullish_points += 20
-            reasons.append(("✓✓ Bullish HH+HL structure", "strong"))
-        elif structure == 'bullish_bias':
-            bullish_points += 10
-            reasons.append(("✓ Weak bullish structure", "normal"))
-        elif structure == 'bearish_structure':
-            bearish_points += 20
-            reasons.append(("✓✓ Bearish LH+LL structure", "strong"))
-        elif structure == 'bearish_bias':
-            bearish_points += 10
-            reasons.append(("✓ Weak bearish structure", "normal"))
-        else:
-            neutral_points += 10
-            reasons.append(("→ No clear structure", "warning"))
-        
-        # 5. VOLUME (Max 10 points)
-        if len(volumes) >= 20:
-            vol_sma = np.mean(volumes[-20:])
-            recent_vol = np.mean(volumes[-3:])
-            
-            if recent_vol > vol_sma * 1.5:
-                # Volume confirms direction
-                if bullish_points > bearish_points:
-                    bullish_points += 10
-                    reasons.append(("✓✓ High volume confirming bullish", "strong"))
-                elif bearish_points > bullish_points:
-                    bearish_points += 10
-                    reasons.append(("✓✓ High volume confirming bearish", "strong"))
-            elif recent_vol > vol_sma * 1.2:
-                if bullish_points > bearish_points:
-                    bullish_points += 5
-                elif bearish_points > bullish_points:
-                    bearish_points += 5
-                reasons.append(("✓ Volume above average", "normal"))
-            elif recent_vol < vol_sma * 0.7:
-                neutral_points += 10
-                warnings.append("Low volume - weak conviction")
-        
-        # Calculate final score
-        total_bullish = bullish_points
-        total_bearish = bearish_points
-        
-        # STRICT LOGIC: Conflicting signals reduce confidence
-        if bullish_points > 0 and bearish_points > 0:
-            # Conflicting signals - cancel out
-            conflict_penalty = min(bullish_points, bearish_points) * 0.5
-            total_bullish -= conflict_penalty
-            total_bearish -= conflict_penalty
-            warnings.append("Conflicting signals detected")
-        
-        net_score = total_bullish - total_bearish
-        
-        # Determine signal with strict thresholds
-        if total_bullish >= 60 and net_score > 40 and bearish_points < 20:
-            signal = 'BUY'
-            confidence = min(50 + net_score, 95)
-        elif total_bearish >= 60 and net_score < -40 and bullish_points < 20:
-            signal = 'SELL'
-            confidence = min(50 + abs(net_score), 95)
-        elif net_score > 25 and bullish_points > bearish_points * 2:
-            signal = 'WEAK_BUY'
-            confidence = 55
-        elif net_score < -25 and bearish_points > bullish_points * 2:
-            signal = 'WEAK_SELL'
-            confidence = 55
-        else:
-            signal = 'NO_TRADE'
-            confidence = 0
-            warnings.append("Insufficient confluence for trade")
-        
-        atr = np.mean([h - l for h, l in zip(highs[-14:], lows[-14:])])
-        
-        return {
-            'signal': signal,
-            'confidence': round(confidence, 1),
-            'net_score': round(net_score, 1),
-            'bullish_points': bullish_points,
-            'bearish_points': bearish_points,
-            'rsi': rsi,
-            'macd': macd,
-            'macd_signal': macd_signal,
-            'macd_hist': macd_hist,
-            'adx': adx,
-            'ema20': ema20,
-            'ema50': ema50,
-            'sma200': sma200,
-            'atr': atr,
-            'structure': structure,
-            'reasons': reasons,
-            'warnings': warnings,
-            'highs': highs,
-            'lows': lows
-        }
+    def structure(self,h,l):
+        if len(h)<20: return "undefined",0
+        sh=[(i,h[i]) for i in range(2,len(h)-2) if h[i]>max(h[i-2:i]) and h[i]>max(h[i+1:i+3])]
+        sl=[(i,l[i]) for i in range(2,len(l)-2) if l[i]<min(l[i-2:i]) and l[i]<min(l[i+1:i+3])]
+        if len(sh)<2 or len(sl)<2: return "undefined",0
+        hh,hl=(1 if sh[-1][1]>sh[-2][1] else -1),(1 if sl[-1][1]>sl[-2][1] else -1)
+        if hh==1 and hl==1: return "bullish_structure",3
+        elif hh==1 or hl==1: return "bullish_bias",1.5
+        elif hh==-1 and hl==-1: return "bearish_structure",-3
+        elif hh==-1 or hl==-1: return "bearish_bias",-1.5
+        return "choppy",0
     
-    def calculate_levels(self, analysis, current_price, pair):
-        """Calculate entry, SL, TP based on signal"""
-        signal = analysis['signal']
-        atr = analysis['atr']
+    def analyze_tf(self,d,tf):
+        c,h,l,v=d["c"],d["h"],d["l"],d["v"]
+        price=d["price"]
         
-        if signal in ['NO_TRADE']:
-            return {
-                'entry': current_price,
-                'sl': None,
-                'tp': None,
-                'trail': None,
-                'rr': 0
-            }
+        ema9,ema21,ema50=self.ema(c,9)[-1],self.ema(c,21)[-1],self.ema(c,50)[-1] if len(c)>=50 else self.ema(c,21)[-1]
+        rsi=self.rsi(c)
+        macd_hist,macd_st=self.macd(c)
+        adx=self.adx(h,l,c)
+        struct,sstr=self.structure(h,l)
+        atr=self.atr(h,l,c)
         
-        # Volatility multiplier
-        atr_pct = (atr / current_price) * 100
-        if 'BTC' in pair or 'ETH' in pair:
-            mult = 2.5
-        elif 'OIL' in pair or 'XAU' in pair:
-            mult = 2.0
-        else:
-            mult = 1.5
+        # Trend
+        if price>ema9>ema21>ema50: trend,esc="strong_uptrend",3
+        elif price>ema9>ema21: trend,esc="uptrend",2
+        elif price>ema9: trend,esc="weak_uptrend",1
+        elif price<ema9<ema21<ema50: trend,esc="strong_downtrend",-3
+        elif price<ema9<ema21: trend,esc="downtrend",-2
+        elif price<ema9: trend,esc="weak_downtrend",-1
+        else: trend,esc="ranging",0
         
-        if atr_pct > 3:
-            mult *= 1.2
+        # Score
+        score=0; reasons=[]
         
-        if signal in ['BUY', 'WEAK_BUY']:
-            entry = current_price
-            recent_low = min(analysis['lows'][-5:])
-            sl = max(recent_low - (atr * 0.3), entry - (atr * mult))
-            risk = entry - sl
-            tp = entry + (risk * 2)
-            trail = entry + risk
-        else:
-            entry = current_price
-            recent_high = max(analysis['highs'][-5:])
-            sl = min(recent_high + (atr * 0.3), entry + (atr * mult))
-            risk = sl - entry
-            tp = entry - (risk * 2)
-            trail = entry - risk
+        # RSI with trend context
+        if rsi<30:
+            if "downtrend" in trend: score+=3; reasons.append(f"RSI oversold {rsi:.1f} in downtrend=potential bounce")
+            else: score+=1; reasons.append(f"RSI oversold {rsi:.1f}")
+        elif rsi<40: score+=0.5; reasons.append(f"RSI low {rsi:.1f}")
+        elif rsi>70:
+            if "uptrend" in trend: score-=3; reasons.append(f"RSI overbought {rsi:.1f} in uptrend=potential pullback")
+            else: score-=1; reasons.append(f"RSI overbought {rsi:.1f}")
+        elif rsi>60: score-=0.5; reasons.append(f"RSI high {rsi:.1f}")
+        else: reasons.append(f"RSI {rsi:.1f}")
         
-        if current_price > 10000:
-            dec = 2
-        elif current_price > 1000:
-            dec = 3
-        elif current_price > 100:
-            dec = 4
-        else:
-            dec = 5
+        # MACD
+        if macd_hist>0 and "bullish" in macd_st:
+            score+=2 if "expanding" in macd_st else 1
+            reasons.append("MACD bullish"+(" expanding" if "expanding" in macd_st else ""))
+        elif macd_hist<0 and "bearish" in macd_st:
+            score-=2 if "expanding" in macd_st else 1
+            reasons.append("MACD bearish"+(" expanding" if "expanding" in macd_st else ""))
         
-        return {
-            'entry': round(entry, dec),
-            'sl': round(sl, dec),
-            'tp': round(tp, dec),
-            'trail': round(trail, dec),
-            'rr': 2.0
-        }
+        score+=esc; reasons.append(f"Trend: {trend}")
+        score+=sstr; reasons.append(f"Structure: {struct}")
+        reasons.append(f"ADX: {adx:.1f}")
+        
+        # Volatility check
+        recent_vol=np.mean(v[-5:]) if len(v)>=5 else np.mean(v)
+        avg_vol=np.mean(v[-20:]) if len(v)>=20 else np.mean(v)
+        if avg_vol>0 and recent_vol/avg_vol>2: reasons.append("⚠ High volatility"); score*=0.8
+        
+        # Signal determination
+        if score>=6 and adx>30: sig,conf=Signal.STRONG_BUY,min(85+score,98)
+        elif score>=4: sig,conf=Signal.BUY,min(75+score,90)
+        elif score>1 and adx>25: sig,conf=Signal.WEAK_BUY,60+score*3
+        elif score<=-6 and adx>30: sig,conf=Signal.STRONG_SELL,min(85+abs(score),98)
+        elif score<=-4: sig,conf=Signal.SELL,min(75+abs(score),90)
+        elif score<-1 and adx>25: sig,conf=Signal.WEAK_SELL,60+abs(score)*3
+        else: sig,conf=Signal.NO_TRADE,35+abs(score)*2
+        
+        if not d["is_live"]: conf*=0.85
+        if d["age"]>d["max_age"]: conf*=0.7
+        
+        return TFData(tf,sig,conf,rsi,adx,trend,price,d["age"],d["max_age"],self.TFS[tf]["w"]),reasons,atr
     
-    def analyze(self, pair, image_path=None):
-        data = self.get_market_data(pair)
+    def aggregate(self,tf_results):
+        if not tf_results: return Signal.NO_TRADE,0,{},["No data"]
         
-        if not data:
-            return {
-                'signal': 'ERROR',
-                'confidence': 0,
-                'error': 'Data unavailable',
-                'reasoning': []
-            }
+        # Check HTF conflict
+        htf=[t for t,r,a in tf_results if t.tf in ["4h","1d"]]
+        if len(htf)>=2:
+            bulls=sum(1 for t in htf if t.signal in [Signal.STRONG_BUY,Signal.BUY])
+            bears=sum(1 for t in htf if t.signal in [Signal.STRONG_SELL,Signal.SELL])
+            if bulls>0 and bears>0: return Signal.NO_TRADE,25,{"conflict":"HTF mismatch"},["⚠ Higher TFs conflict"]
         
-        analysis = self.strict_confluence_analysis(data)
-        levels = self.calculate_levels(analysis, data['current'], pair)
+        wbull=wbear=0; prices=[]; all_reas=[]
+        for td,reas,atr in tf_results:
+            prices.append(td.price)
+            w=td.weight*(td.conf/100)
+            all_reas.extend([f"[{td.tf}] {r}" for r in reas])
+            if td.signal in [Signal.STRONG_BUY,Signal.BUY]: wbull+=w*(2 if td.signal==Signal.STRONG_BUY else 1)
+            elif td.signal==Signal.WEAK_BUY: wbull+=w*0.5
+            elif td.signal in [Signal.STRONG_SELL,Signal.SELL]: wbear+=w*(2 if td.signal==Signal.STRONG_SELL else 1)
+            elif td.signal==Signal.WEAK_SELL: wbear+=w*0.5
         
-        # Format output
-        formatted_reasons = []
-        for reason, strength in analysis['reasons']:
-            formatted_reasons.append(reason)
+        avg_price=sum(prices)/len(prices)
+        net=wbull-wbear
         
-        for warning in analysis['warnings']:
-            formatted_reasons.append(f"⚠ {warning}")
+        if wbull>wbear*1.5 and net>2:
+            fs=Signal.STRONG_BUY if net>4 else Signal.BUY if net>2 else Signal.WEAK_BUY
+            fc=min(85+net,98) if fs==Signal.STRONG_BUY else min(75+net,90)
+        elif wbear>wbull*1.5 and net<-2:
+            fs=Signal.STRONG_SELL if net<-4 else Signal.SELL if net<-2 else Signal.WEAK_SELL
+            fc=min(85+abs(net),98) if fs==Signal.STRONG_SELL else min(75+abs(net),90)
+        else: fs,fc=Signal.NO_TRADE,30+abs(net)*3
         
-        if data['is_stale']:
-            formatted_reasons.append(f"⚠ Data delayed ({data['last_candle_age_minutes']} min old)")
+        # Price divergence check
+        div=(max(prices)-min(prices))/avg_price*100 if avg_price>0 else 0
+        if div>1.5: all_reas.append(f"⚠ Price divergence {div:.1f}%"); fc*=0.75
         
-        if data['price_gap'] > 0:
-            formatted_reasons.append(f"⚠ Price gap: {data['price_gap']:.2f}")
+        return fs,min(fc,98),{"net":net,"div":div,"tfs":len(tf_results)},all_reas
+    
+    def levels(self,price,sig,atr,pair):
+        dec=2 if price>10000 else 3 if price>1000 else 4 if price>100 else 5
+        mult,rr=(2.0,2.5) if "BTC" in pair or "ETH" in pair else ((1.5,2.0) if "XAU" in pair or "XAG" in pair else (1.0,1.5))
+        sl_dist=max(atr*mult,price*0.005)
         
-        current = data['current']
-        if current > 10000:
-            dec = 2
-        elif current > 1000:
-            dec = 3
-        elif current > 100:
-            dec = 4
-        else:
-            dec = 5
+        if sig in [Signal.STRONG_BUY,Signal.BUY,Signal.WEAK_BUY]:
+            return{"entry":round(price,dec),"sl":round(price-sl_dist,dec),"tp":round(price+(sl_dist*rr),dec),"trail":round(price+(sl_dist*0.5),dec),"rr":rr,"atr":round(atr,dec)}
+        elif sig in [Signal.STRONG_SELL,Signal.SELL,Signal.WEAK_SELL]:
+            return{"entry":round(price,dec),"sl":round(price+sl_dist,dec),"tp":round(price-(sl_dist*rr),dec),"trail":round(price-(sl_dist*0.5),dec),"rr":rr,"atr":round(atr,dec)}
+        return{"entry":round(price,dec),"sl":None,"tp":None,"trail":None,"rr":0,"atr":round(atr,dec)}
+    
+    def analyze(self,pair,tfs=None,primary="1h"):
+        if tfs is None: tfs=["15m","1h","4h"]
         
-        return {
-            'signal': analysis['signal'],
-            'confidence': analysis['confidence'],
-            'confluence_score': analysis['net_score'],
-            'entry_price': levels['entry'],
-            'stop_loss': levels['sl'],
-            'take_profit': levels['tp'],
-            'trailing_activation': levels['trail'],
-            'risk_reward': levels['rr'],
-            'pair': pair,
-            'current_price': round(current, dec),
-            'timestamp': datetime.fromtimestamp(data['timestamp']).strftime('%H:%M:%S'),
-            'data_delay_min': data['last_candle_age_minutes'],
-            'indicators': {
-                'rsi': round(analysis['rsi'], 1),
-                'macd': round(analysis['macd'], 4),
-                'macd_hist': round(analysis['macd_hist'], 4),
-                'adx': round(analysis['adx'], 1),
-                'atr': round(analysis['atr'], dec)
-            },
-            'confluence': {
-                'bullish': analysis['bullish_points'],
-                'bearish': analysis['bearish_points']
-            },
-            'reasoning': formatted_reasons
+        tf_results=[]
+        for tf in tfs:
+            d=self.fetch(pair,tf)
+            if d:
+                td,reas,atr=self.analyze_tf(d,tf)
+                tf_results.append((td,reas,atr))
+                logger.info(f"{pair} {tf}: {td.signal.value} RSI:{td.rsi:.1f} Price:{td.price:.2f} Age:{td.age}m Live:{d['is_live']}")
+        
+        if not tf_results:
+            return{"signal":"NO_TRADE","confidence":0,"error":"No fresh data","pair":pair,"reasoning":["⚠ No valid market data"]}
+        
+        fs,conf,meta,reasons=self.aggregate(tf_results)
+        
+        prim=next((t for t,r,a in tf_results if t.tf==primary),tf_results[0][0])
+        prim_atr=next((a for t,r,a in tf_results if t.tf==primary),tf_results[0][2])
+        
+        lv=self.levels(prim.price,fs,prim_atr,pair)
+        
+        if prim.age>prim.max_age*2:
+            return{"signal":"NO_TRADE","confidence":0,"error":"Data too stale","pair":pair,"reasoning":["⚠ Data too old - try again later"]}
+        
+        return{
+            "signal":fs.value,
+            "confidence":round(conf,1),
+            "pair":pair,
+            "current_price":round(prim.price,2 if prim.price>10000 else 3),
+            "entry_price":lv["entry"],
+            "stop_loss":lv.get("sl"),
+            "take_profit":lv.get("tp"),
+            "trailing_activation":lv.get("trail"),
+            "risk_reward":lv["rr"],
+            "timestamp":datetime.now().strftime("%H:%M:%S"),
+            "data":{"age_min":prim.age,"max_age":prim.max_age,"is_live":prim.age<10,"source":next((d.get('source','yahoo') for t,r,a in tf_results if t.tf==primary),'yahoo')},
+            "indicators":{"rsi":round(prim.rsi,1),"adx":round(prim.adx,1),"atr":lv["atr"],"trend":prim.trend},
+            "multi_tf":meta,
+            "reasoning":reasons[:6]
         }
 
-analyzer = SmartForexAnalyzer()
+analyzer=ProAnalyzer()
