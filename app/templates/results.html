@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Analysis Results - WizForex</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0e1a;color:#fff;min-height:100vh;padding-bottom:50px}
+        .container{max-width:900px;margin:0 auto;padding:20px}
+        .header{display:flex;justify-content:space-between;align-items:center;padding:20px 0}
+        .logo{font-size:24px;font-weight:800;background:linear-gradient(135deg,#00d4ff,#7b2cbf);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+        .back-btn{color:#64748b;text-decoration:none;display:flex;align-items:center;gap:8px;transition:.3s}
+        .back-btn:hover{color:#fff}
+        
+        /* Chart Preview Card */
+        .chart-card{background:linear-gradient(145deg,#111827,#1a1f2e);border-radius:24px;padding:20px;margin:20px 0;border:1px solid rgba(255,255,255,0.05);overflow:hidden}
+        .chart-card img{width:100%;border-radius:16px;display:block}
+        .chart-placeholder{background:linear-gradient(135deg,#1a1f2e,#252b3d);border-radius:16px;height:300px;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:18px}
+        
+        /* Signal Card */
+        .signal-card{background:linear-gradient(145deg,#111827,#1a1f2e);border-radius:30px;padding:40px;margin:20px 0;text-align:center;border:1px solid rgba(255,255,255,0.05)}
+        .signal-label{color:#64748b;font-size:14px;text-transform:uppercase;letter-spacing:2px;margin-bottom:20px}
+        .signal-value{font-size:72px;font-weight:800;margin:20px 0;text-transform:uppercase;letter-spacing:-2px}
+        .signal-buy{color:#00d4ff;text-shadow:0 0 60px rgba(0,212,255,0.5)}
+        .signal-sell{color:#ff4757;text-shadow:0 0 60px rgba(255,71,87,0.5)}
+        .signal-neutral{color:#ffa502;text-shadow:0 0 60px rgba(255,165,2,0.3)}
+        .signal-notrade{color:#64748b}
+        
+        /* Confidence Bar */
+        .confidence-section{margin:30px 0}
+        .confidence-label{display:flex;justify-content:space-between;margin-bottom:15px;font-size:16px}
+        .confidence-bar{height:12px;background:rgba(255,255,255,0.1);border-radius:20px;overflow:hidden}
+        .confidence-fill{height:100%;border-radius:20px;transition:width 1s ease}
+        .fill-high{background:linear-gradient(90deg,#00d4ff,#7b2cbf)}
+        .fill-medium{background:linear-gradient(90deg,#ffa502,#ff6348)}
+        .fill-low{background:linear-gradient(90deg,#ff4757,#ff6348)}
+        
+        /* Price Grid */
+        .price-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin:30px 0}
+        @media(min-width:600px){.price-grid{grid-template-columns:repeat(4,1fr)}}
+        .price-card{background:linear-gradient(145deg,#1a1f2e,#252b3d);border-radius:20px;padding:25px;text-align:center;border:1px solid rgba(255,255,255,0.05)}
+        .price-label{color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+        .price-value{font-size:28px;font-weight:700}
+        .price-entry{color:#fff}
+        .price-tp{color:#00d4ff}
+        .price-sl{color:#ff4757}
+        .price-rr{color:#ffa502}
+        
+        /* Analysis Details */
+        .details-card{background:linear-gradient(145deg,#111827,#1a1f2e);border-radius:24px;padding:30px;margin:20px 0;border:1px solid rgba(255,255,255,0.05)}
+        .details-title{font-size:20px;font-weight:700;margin-bottom:25px;display:flex;align-items:center;gap:12px}
+        .detail-item{display:flex;align-items:flex-start;gap:15px;padding:18px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
+        .detail-item:last-child{border-bottom:none}
+        .detail-icon{width:36px;height:36px;background:rgba(0,212,255,0.1);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+        .detail-text{flex:1}
+        .detail-label{color:#64748b;font-size:13px;margin-bottom:4px}
+        .detail-value{color:#fff;font-size:15px;font-weight:500}
+        
+        /* New Analysis Button */
+        .new-analysis-btn{display:block;width:100%;padding:22px;background:linear-gradient(135deg,#00d4ff,#7b2cbf);border:none;border-radius:20px;color:#fff;font-size:18px;font-weight:700;text-align:center;text-decoration:none;margin-top:30px;transition:.3s;box-shadow:0 20px 40px rgba(0,212,255,0.2)}
+        .new-analysis-btn:hover{transform:translateY(-3px);box-shadow:0 30px 60px rgba(0,212,255,0.3)}
+        
+        /* Animations */
+        @keyframes fadeInUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+        .animate-in{animation:fadeInUp 0.6s ease forwards;opacity:0}
+        .delay-1{animation-delay:0.1s}
+        .delay-2{animation-delay:0.2s}
+        .delay-3{animation-delay:0.3s}
+        .delay-4{animation-delay:0.4s}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <a href="{{ url_for('main.dashboard') }}" class="logo">🚀 WizForex</a>
+            <a href="{{ url_for('main.dashboard') }}" class="back-btn">← Back to Dashboard</a>
+        </div>
+        
+        {% if image_url %}
+        <div class="chart-card animate-in">
+            <img src="{{ image_url }}" alt="Uploaded Chart">
+        </div>
+        {% else %}
+        <div class="chart-card animate-in">
+            <div class="chart-placeholder">📊 No chart uploaded</div>
+        </div>
+        {% endif %}
+        
+        <div class="signal-card animate-in delay-1">
+            <div class="signal-label">AI Trading Signal</div>
+            <div class="signal-value signal-{% if analysis.signal == 'BUY' %}buy{% elif analysis.signal == 'SELL' %}sell{% elif analysis.signal == 'NO_TRADE' %}notrade{% else %}neutral{% endif %}">
+                {{ analysis.signal }}
+            </div>
+            
+            <div class="confidence-section">
+                <div class="confidence-label">
+                    <span>AI Confidence</span>
+                    <span style="font-weight:700;color:#00d4ff">{{ analysis.confidence }}%</span>
+                </div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill fill-{% if analysis.confidence >= 70 %}high{% elif analysis.confidence >= 40 %}medium{% else %}low{% endif %}" style="width:{{ analysis.confidence }}%"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="price-grid animate-in delay-2">
+            <div class="price-card">
+                <div class="price-label">Entry Price</div>
+                <div class="price-value price-entry">{{ "%.5f"|format(analysis.entry_price) if analysis.entry_price else "—" }}</div>
+            </div>
+            <div class="price-card">
+                <div class="price-label">Take Profit</div>
+                <div class="price-value price-tp">{{ "%.5f"|format(analysis.take_profit) if analysis.take_profit else "—" }}</div>
+            </div>
+            <div class="price-card">
+                <div class="price-label">Stop Loss</div>
+                <div class="price-value price-sl">{{ "%.5f"|format(analysis.stop_loss) if analysis.stop_loss else "—" }}</div>
+            </div>
+            <div class="price-card">
+                <div class="price-label">Risk:Reward</div>
+                <div class="price-value price-rr">
+                    {% if analysis.take_profit and analysis.stop_loss and analysis.entry_price %}
+                    1:{{ "%.1f"|format((analysis.take_profit - analysis.entry_price) / (analysis.entry_price - analysis.stop_loss)) }}
+                    {% else %}—{% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="details-card animate-in delay-3">
+            <div class="details-title">🧠 Why This Signal?</div>
+            {% for reason in reasoning_list %}
+            <div class="detail-item">
+                <div class="detail-icon">✓</div>
+                <div class="detail-text">
+                    <div class="detail-label">Technical Indicator</div>
+                    <div class="detail-value">{{ reason }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <a href="{{ url_for('main.dashboard') }}" class="new-analysis-btn animate-in delay-4">
+            🔄 New Analysis
+        </a>
+    </div>
+</body>
+</html>
